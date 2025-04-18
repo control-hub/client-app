@@ -44,6 +44,8 @@ class Execution(TypedDict):
     updated: str
 
 executed_tasks = set()
+# Track active executions
+active_executions = set()
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -134,7 +136,7 @@ class AgentService:
         self_real_computer = {
             "ip": get_local_ip(),
             "mac": get_mac(),
-            "status": 2,  # Online status
+            "status": 2,  # Online status (idle)
         }
         await self.pb.collection("computers").update(
             self.computer["id"], 
@@ -142,6 +144,18 @@ class AgentService:
             {"params": self.params}
         )
         print(f"📟 Agent initialized for computer: {self.computer['name']} ({self.computer['ip']})")
+    
+    async def update_computer_status(self, status):
+        """Update computer status in PocketBase"""
+        try:
+            await self.pb.collection("computers").update(
+                self.computer["id"], 
+                {"status": status}, 
+                {"params": self.params}
+            )
+            print(f"💻 Computer status updated to: {status}")
+        except Exception as e:
+            print(f"❌ Failed to update computer status: {e}")
     
     async def handle_execution(self, event: RealtimeEvent):
         execution = event["record"]
@@ -155,7 +169,14 @@ class AgentService:
         if execution.get("completed"):
             return
         
-        print(f"🚀 Executing task: {execution_id}")
+        # Add to active executions
+        active_executions.add(execution_id)
+        
+        # Update computer status to running (1) if this is the first active execution
+        if len(active_executions) == 1:
+            await self.update_computer_status(1)  # Status 1 = running tasks
+        
+        print(f"🚀 Executing task: {execution_id} (Active tasks: {len(active_executions)})")
         
         # Update execution to mark it as in progress
         await self.pb.collection("executions").update(
@@ -176,7 +197,7 @@ class AgentService:
         )
         
         # Format the final log
-        final_logs = f"🔄 Execution started...\n\n{logs}"
+        final_logs = f"{logs}"
         
         # Update the execution with results
         await self.pb.collection("executions").update(
@@ -188,7 +209,15 @@ class AgentService:
             {"params": self.params}
         )
         
-        print(f"✅ Task completed: {execution_id}")
+        # Remove from active executions
+        if execution_id in active_executions:
+            active_executions.remove(execution_id)
+        
+        # If no more active tasks, update status to idle (2)
+        if len(active_executions) == 0:
+            await self.update_computer_status(2)  # Status 2 = idle
+        
+        print(f"✅ Task completed: {execution_id} (Remaining tasks: {len(active_executions)})")
     
     async def run(self):
         try:
