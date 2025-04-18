@@ -2,7 +2,6 @@ import asyncio
 import socket
 import uuid
 import sys
-import io
 import tempfile
 import os
 import subprocess
@@ -12,6 +11,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pocketbase import PocketBase
 from pocketbase.models.dtos import RealtimeEvent
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 class Computer(TypedDict):
     collectionId: str
@@ -233,7 +237,7 @@ class AgentService:
 
 async def main():
     SERVER_URL = "https://pb.control-hub.org"
-    TOKEN = "rDbSpdxCYE1p"
+    TOKEN = os.getenv("TOKEN")
     
     agent = AgentService(SERVER_URL, TOKEN)
     await agent.initialize()
