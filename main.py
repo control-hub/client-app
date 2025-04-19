@@ -6,7 +6,7 @@ import tempfile
 import os
 import subprocess
 from datetime import datetime
-from typing import TypedDict
+from typing import TypedDict, Dict, Set, Callable, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 
 from pocketbase import PocketBase
@@ -30,6 +30,7 @@ class Computer(TypedDict):
     updated: str
     created: str
 
+
 class Execution(TypedDict):
     collectionId: str
     collectionName: str
@@ -43,220 +44,249 @@ class Execution(TypedDict):
     created: str
     updated: str
 
-executed_tasks = set()
-# Track active executions
-active_executions = set()
 
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('8.8.8.8', 80))
-        return s.getsockname()[0]
-    finally:
-        s.close()
+class NetworkUtils:
+    @staticmethod
+    def get_local_ip() -> str:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('8.8.8.8', 80))
+            return s.getsockname()[0]
+        finally:
+            s.close()
 
-def get_mac():
-    node = uuid.getnode()
-    if (node >> 40) & 1:
-        return None
-    return ':'.join(('%012x' % node)[i:i+2] for i in range(0, 12, 2)).upper()
+    @staticmethod
+    def get_mac() -> Optional[str]:
+        node = uuid.getnode()
+        if (node >> 40) & 1:
+            return None
+        return ':'.join(('%012x' % node)[i:i+2] for i in range(0, 12, 2)).upper()
 
-def run_code_in_process(code, execution_id, timeout=30):
-    """
-    Запускает Python код в отдельном процессе.
-    
-    Args:
-        code: строка с Python кодом
-        execution_id: идентификатор выполнения (для имени файла)
-        timeout: таймаут в секундах (по умолчанию 30 сек)
-    
-    Returns:
-        Строка с объединенным выводом stdout и stderr
-    """
-    # Создаем временный файл с именем, основанным на ID выполнения
-    temp_dir = tempfile.gettempdir()
-    temp_filename = os.path.join(temp_dir, f"exec_{execution_id}.py")
-    
-    try:
-        # Записываем код в файл
-        with open(temp_filename, 'w', encoding='utf-8') as temp_file:
-            temp_file.write(code)
-        
-        # Запускаем код в отдельном процессе
-        process = subprocess.Popen(
-            [sys.executable, temp_filename],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+
+class CodeExecutor:
+    @staticmethod
+    async def execute_code(code: str, execution_id: str, timeout: Optional[int] = None) -> str:
+        return await asyncio.to_thread(
+            CodeExecutor._run_in_process, 
+            code, 
+            execution_id, 
+            timeout
         )
-        
-        # Получаем результаты с таймаутом
-        stdout, stderr = process.communicate(timeout=timeout)
-        
-        stdout_str = stdout.decode('utf-8')
-        stderr_str = stderr.decode('utf-8')
-        
-        # Формируем полный лог
-        output = stdout_str
-        if stderr_str:
-            if output:
-                output += "\n\n"
-            output += f"Errors:\n{stderr_str}"
-        
-        if process.returncode != 0:
-            output += f"\n\nProcess exited with code {process.returncode}"
-            
-        return output
-    
-    except subprocess.TimeoutExpired:
-        # В случае таймаута принудительно завершаем процесс
-        process.kill()
-        return f"Execution timed out after {timeout} seconds."
-    
-    except Exception as e:
-        return f"Error executing code: {str(e)}"
-    
-    finally:
-        # Удаляем временный файл
-        if os.path.exists(temp_filename):
-            try:
-                os.unlink(temp_filename)
-            except:
-                pass
 
-class AgentService:
+    @staticmethod
+    def _run_in_process(code: str, execution_id: str, timeout: Optional[int] = None) -> str:
+        temp_dir = tempfile.gettempdir()
+        temp_filename = os.path.join(temp_dir, f"exec_{execution_id}.py")
+        
+        try:
+            with open(temp_filename, 'w', encoding='utf-8') as temp_file:
+                temp_file.write(code)
+            
+            process = subprocess.Popen(
+                [sys.executable, temp_filename],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            stdout, stderr = process.communicate(timeout=timeout)
+            
+            stdout_str = stdout.decode('utf-8')
+            stderr_str = stderr.decode('utf-8')
+            
+            output = stdout_str
+            if stderr_str:
+                if output:
+                    output += "\n\n"
+                output += f"Errors:\n{stderr_str}"
+            
+            if process.returncode != 0:
+                output += f"\n\nProcess exited with code {process.returncode}"
+                
+            return output
+        
+        except subprocess.TimeoutExpired:
+            process.kill()
+            return f"Execution timed out after {timeout} seconds."
+        
+        except Exception as e:
+            return f"Error executing code: {str(e)}"
+        
+        finally:
+            if os.path.exists(temp_filename):
+                try:
+                    os.unlink(temp_filename)
+                except:
+                    pass
+
+
+class DatabaseClient:
     def __init__(self, server_url: str, token: str):
         self.pb = PocketBase(server_url)
         self.token = token
         self.params = {"token": token}
-        self.executor = ThreadPoolExecutor(max_workers=5)
-        self.computer = None
-    
-    async def initialize(self):
-        self.computer = Computer(**(await self.pb.collection("computers").get_first({"params": self.params})))
-        self_real_computer = {
-            "ip": get_local_ip(),
-            "mac": get_mac(),
-            "status": 2,  # Online status (idle)
-        }
-        await self.pb.collection("computers").update(
-            self.computer["id"], 
-            self_real_computer, 
+
+    async def get_computer(self) -> Computer:
+        return Computer(**(await self.pb.collection("computers").get_first({"params": self.params})))
+
+    async def update_computer(self, computer_id: str, data: Dict[str, Any]) -> Computer:
+        return Computer(**(await self.pb.collection("computers").update(
+            computer_id, 
+            data, 
+            {"params": self.params}
+        )))
+
+    async def update_execution(self, execution_id: str, data: Dict[str, Any]) -> Execution:
+        return await self.pb.collection("executions").update(
+            execution_id,
+            data,
             {"params": self.params}
         )
+
+    async def subscribe_to_executions(
+        self, 
+        computer_id: str, 
+        callback: Callable[[RealtimeEvent], Any]
+    ):
+        filter_query = f"computer.id=\"{computer_id}\""
+        subscription_params = {
+            "headers": {},
+            "params": {
+                "token": self.token, 
+                "filter": filter_query
+            }
+        }
+        
+        return await self.pb.collection("executions").subscribe_all(
+            callback, 
+            subscription_params
+        )
+
+
+class ExecutionTracker:
+    def __init__(self):
+        self.executed_tasks: Set[str] = set()
+        self.active_executions: Set[str] = set()
+    
+    def is_executed(self, execution_id: str) -> bool:
+        return execution_id in self.executed_tasks
+    
+    def mark_executed(self, execution_id: str) -> None:
+        self.executed_tasks.add(execution_id)
+    
+    def add_active(self, execution_id: str) -> bool:
+        was_empty = len(self.active_executions) == 0
+        self.active_executions.add(execution_id)
+        return was_empty
+    
+    def remove_active(self, execution_id: str) -> bool:
+        if execution_id in self.active_executions:
+            self.active_executions.remove(execution_id)
+        return len(self.active_executions) == 0
+    
+    def count_active(self) -> int:
+        return len(self.active_executions)
+
+
+class AgentService:
+    def __init__(self, server_url: str, token: str):
+        self.db_client = DatabaseClient(server_url, token)
+        self.executor = CodeExecutor()
+        self.tracker = ExecutionTracker()
+        self.computer: Optional[Computer] = None
+    
+    async def initialize(self) -> None:
+        self.computer = await self.db_client.get_computer()
+        self_real_computer = {
+            "ip": NetworkUtils.get_local_ip(),
+            "mac": NetworkUtils.get_mac(),
+            "status": 2,  # Idle
+        }
+        self.computer = await self.db_client.update_computer(
+            self.computer["id"], 
+            self_real_computer
+        )
+        
         print(f"📟 Agent initialized for computer: {self.computer['name']} ({self.computer['ip']})")
     
-    async def update_computer_status(self, status):
-        """Update computer status in PocketBase"""
+    async def update_computer_status(self, status: int) -> None:
         try:
-            await self.pb.collection("computers").update(
+            self.computer = await self.db_client.update_computer(
                 self.computer["id"], 
-                {"status": status}, 
-                {"params": self.params}
+                {"status": status}
             )
             print(f"💻 Computer status updated to: {status}")
         except Exception as e:
             print(f"❌ Failed to update computer status: {e}")
     
-    async def handle_execution(self, event: RealtimeEvent):
+    async def handle_execution(self, event: RealtimeEvent) -> None:
         execution = event["record"]
         execution_id = execution.get("id")
         
-        if execution_id in executed_tasks:
+        if self.tracker.is_executed(execution_id):
             return
         
-        executed_tasks.add(execution_id)
+        self.tracker.mark_executed(execution_id)
         
         if execution.get("completed"):
             return
         
-        # Add to active executions
-        active_executions.add(execution_id)
+        asyncio.create_task(self.process_execution(execution, execution_id))
+
+    async def process_execution(self, execution: Dict[str, Any], execution_id: str) -> None:
+        is_first_task = self.tracker.add_active(execution_id)
         
-        # Update computer status to running (1) if this is the first active execution
-        if len(active_executions) == 1:
-            await self.update_computer_status(1)  # Status 1 = running tasks
+        if is_first_task:
+            await self.update_computer_status(1)  # Running
         
-        print(f"🚀 Executing task: {execution_id} (Active tasks: {len(active_executions)})")
+        print(f"🚀 Executing task: {execution_id} (Active tasks: {self.tracker.count_active()})")
         
-        # Update execution to mark it as in progress
-        await self.pb.collection("executions").update(
+        await self.db_client.update_execution(
             execution_id,
-            {"logs": "🔄 Execution started...\n"},
-            {"params": self.params}
+            {"logs": "🔄 Execution started...\n"}
         )
         
-        # Execute the code in a separate thread to avoid blocking the event loop
         code = execution.get("executable")
+        logs = await self.executor.execute_code(code, execution_id)
         
-        # Run the execution in a thread pool as a separate process
-        logs = await asyncio.get_event_loop().run_in_executor(
-            self.executor, 
-            run_code_in_process, 
-            code,
-            execution_id
-        )
-        
-        # Format the final log
-        final_logs = f"{logs}"
-        
-        # Update the execution with results
-        await self.pb.collection("executions").update(
+        await self.db_client.update_execution(
             execution_id,
             {
-                "logs": final_logs,
+                "logs": logs,
                 "completed": True
-            },
-            {"params": self.params}
+            }
         )
         
-        # Remove from active executions
-        if execution_id in active_executions:
-            active_executions.remove(execution_id)
+        is_last_task = self.tracker.remove_active(execution_id)
         
-        # If no more active tasks, update status to idle (2)
-        if len(active_executions) == 0:
-            await self.update_computer_status(2)  # Status 2 = idle
+        if is_last_task:
+            await self.update_computer_status(2)  # Idle
         
-        print(f"✅ Task completed: {execution_id} (Remaining tasks: {len(active_executions)})")
+        print(f"✅ Task completed: {execution_id} (Remaining tasks: {self.tracker.count_active()})")
     
-    async def run(self):
+    async def run(self) -> None:
         try:
             print(f"🔌 Connecting to server and subscribing to executions...")
             
-            # Subscribe to executions for this computer
-            filter_query = f"computer.id=\"{self.computer['id']}\""
-            subscription_params = {
-                "headers": {},
-                "params": {
-                    "token": self.token, 
-                    "filter": filter_query
-                }
-            }
-            
-            unsubscribe = await self.pb.collection("executions").subscribe_all(
-                self.handle_execution, 
-                subscription_params
+            unsubscribe = await self.db_client.subscribe_to_executions(
+                self.computer["id"], 
+                self.handle_execution
             )
             
             print(f"✅ Subscription active. Waiting for executions...")
             
-            # Keep the service running
             while True:
-                await asyncio.sleep(60 * 60)  # Check every hour
+                await asyncio.sleep(60 * 60)  # Keep the service running
         
         except Exception as e:
             print(f"❌ Error: {e}")
         
         finally:
-            # Update computer status to offline
             if self.computer:
-                await self.pb.collection("computers").update(
+                await self.db_client.update_computer(
                     self.computer["id"], 
-                    {"status": 0},  # Offline status
-                    {"params": self.params}
+                    {"status": 0}  # Offline
                 )
             
-            # Unsubscribe if subscription is active
             if 'unsubscribe' in locals():
                 try:
                     await unsubscribe()
@@ -264,13 +294,19 @@ class AgentService:
                 except Exception as e:
                     print(f"❌ Error unsubscribing: {e}")
 
-async def main():
+
+async def main() -> None:
     SERVER_URL = "https://pb.control-hub.org"
     TOKEN = os.getenv("TOKEN")
+    
+    if not TOKEN:
+        print("❌ ERROR: TOKEN environment variable is not set")
+        return
     
     agent = AgentService(SERVER_URL, TOKEN)
     await agent.initialize()
     await agent.run()
+
 
 if __name__ == "__main__":
     print("🚀 Starting execution agent...")
