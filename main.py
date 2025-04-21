@@ -5,9 +5,7 @@ import sys
 import tempfile
 import os
 import subprocess
-from datetime import datetime
 from typing import TypedDict, Dict, Set, Callable, Optional, Any
-from concurrent.futures import ThreadPoolExecutor
 
 from pocketbase import PocketBase
 from pocketbase.models.dtos import RealtimeEvent
@@ -15,7 +13,6 @@ from pocketbase.models.dtos import RealtimeEvent
 from dotenv import load_dotenv
 
 load_dotenv()
-
 
 class Computer(TypedDict):
     collectionId: str
@@ -71,12 +68,14 @@ class CodeExecutor:
             code, 
             execution_id, 
             timeout
-        )
+    )
 
     @staticmethod
     def _run_in_process(code: str, execution_id: str, timeout: Optional[int] = None) -> str:
         temp_dir = tempfile.gettempdir()
         temp_filename = os.path.join(temp_dir, f"exec_{execution_id}.py")
+        
+        print(f"🔄 Executing code in temporary file: {temp_filename}")
         
         try:
             with open(temp_filename, 'w', encoding='utf-8') as temp_file:
@@ -115,8 +114,8 @@ class CodeExecutor:
             if os.path.exists(temp_filename):
                 try:
                     os.unlink(temp_filename)
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Error deleting temporary file: {e}")
 
 
 class DatabaseClient:
@@ -265,14 +264,14 @@ class AgentService:
     
     async def run(self) -> None:
         try:
-            print(f"🔌 Connecting to server and subscribing to executions...")
+            print("🔌 Connecting to server and subscribing to executions...")
             
             unsubscribe = await self.db_client.subscribe_to_executions(
                 self.computer["id"], 
                 self.handle_execution
             )
             
-            print(f"✅ Subscription active. Waiting for executions...")
+            print("✅ Subscription active. Waiting for executions...")
             
             while True:
                 await asyncio.sleep(60 * 60)  # Keep the service running
