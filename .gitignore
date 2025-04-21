@@ -177,4 +177,4 @@ cython_debug/
 .pypirc
 
 # Inno Setup files
-# Installer/
+Installer/
