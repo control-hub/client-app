@@ -12,7 +12,7 @@ from pocketbase.models.dtos import RealtimeEvent
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 class Computer(TypedDict):
     collectionId: str
