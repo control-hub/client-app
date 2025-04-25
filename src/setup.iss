@@ -11,8 +11,8 @@
 AppId={{CONTROLHUB-UNIQUE-ID}}
 AppName={#MyAppName}
 AppVerName={#MyAppName}
+AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion={#MyAppVersion}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
