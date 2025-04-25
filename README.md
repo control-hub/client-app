@@ -8,7 +8,7 @@ ControlHub Client is an agent application that allows remote code execution on m
 
 Install the client using the latest installer from the [Releases](https://github.com/control-hub/client/releases) page:
 
-1. Download the latest `ControlHub_Setup.exe` file
+1. Download the latest `ControlHub-VERSION-setup.exe` file
 2. Run the installer
 3. Enter your token when prompted
 4. Follow the installation instructions

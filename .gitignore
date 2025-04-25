@@ -176,5 +176,10 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Test files
+# These are files that are used for testing purposes and should not be included in the repository.
+test/*
+
 # Inno Setup files
 Installer/
+output/*
