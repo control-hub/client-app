@@ -2,7 +2,7 @@
 
 #define MyAppName "ControlHub"
 #define MyAppVersion "1.1.0"
-#define MyAppPublisher "ControlHub"
+#define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"
 #define MyAppIcon "logo.ico"
