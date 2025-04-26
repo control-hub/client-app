@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Download and install Python requirements
+:: Download and install pip requirements
 python\python.exe -m pip install -r requirements.txt
 
 :: Creating ControlHub shortcut in startup folder

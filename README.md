@@ -14,7 +14,6 @@ Install the client using the latest installer from the [Releases](https://github
 4. Follow the installation instructions
 
 The installer will:
-- Install Python if it's not already present
 - Set up required dependencies
 - Configure the client to start automatically with Windows
 
