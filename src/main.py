@@ -1,18 +1,23 @@
-import asyncio
-import subprocess
-import socket
-import uuid
-import tempfile
+import sys
 import os
-import traceback
+
+os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
+
+import asyncio  # noqa: E402
+import subprocess  # noqa: E402
+import socket  # noqa: E402
+import uuid  # noqa: E402
+import tempfile  # noqa: E402
+import traceback  # noqa: E402
 # import locale
 
-from typing import TypedDict, Dict, Set, Callable, Optional, Any
+from typing import TypedDict, Dict, Set, Callable, Optional, Any  # noqa: E402
 
-from pocketbase import PocketBase
-from pocketbase.models.dtos import RealtimeEvent
+from pocketbase import PocketBase  # noqa: E402
+from pocketbase.models.dtos import RealtimeEvent  # noqa: E402
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
+
 
 load_dotenv(override=True)
 
@@ -43,6 +48,9 @@ class Execution(TypedDict):
     created: str
     updated: str
 
+
+app_path = os.getcwd()
+python_path = os.path.join(app_path, "python", "python.exe")
 
 class NetworkUtils:
     @staticmethod
@@ -108,9 +116,7 @@ class CodeExecutor:
             temp_file.write(code)
         
         # TODO: Replace print with a proper logging mechanismHello from here!
-        result = await CodeExecutor.run_command(
-            command=["python", temp_filename]
-        )
+        result = await CodeExecutor.run_command(command=[python_path, temp_filename])
         
         if os.path.exists(temp_filename):
             try:

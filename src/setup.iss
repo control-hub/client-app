@@ -1,7 +1,7 @@
 ; Inno Setup script for ControlHub installer
 
 #define MyAppName "ControlHub"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"
@@ -32,6 +32,7 @@ PrivilegesRequired=admin
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
+Source: "python\*"; DestDir: "{app}\python"
 Source: "install.bat"; DestDir: "{app}"
 Source: "ControlHub.exe"; DestDir: "{app}"
 Source: "requirements.txt"; DestDir: "{app}"
