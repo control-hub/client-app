@@ -32,11 +32,11 @@ PrivilegesRequired=admin
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "python\*"; DestDir: "{app}\python"
 Source: "install.bat"; DestDir: "{app}"
 Source: "ControlHub.exe"; DestDir: "{app}"
 Source: "requirements.txt"; DestDir: "{app}"
 Source: "uninstall.bat"; DestDir: "{app}"
+Source: "python\*"; DestDir: "{app}\python"; Flags: recursesubdirs createallsubdirs
 Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../.gitignore"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../LICENSE"; DestDir: "{app}"; Flags: ignoreversion
