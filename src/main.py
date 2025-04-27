@@ -15,19 +15,33 @@ from pocketbase.models.dtos import RealtimeEvent
 from dotenv import load_dotenv
 from typing import TypedDict, Dict, Set, Callable, Optional, Any, Tuple
 
-os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
+
+if getattr(sys, "frozen", False):
+    os.chdir(os.path.dirname(sys.executable))
+else:
+    os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
+    
 load_dotenv(override=True)
 
-os.makedirs("logs", exist_ok=True)
+app_path = os.getcwd()
+python_executable = os.path.join(app_path, "python", "python.exe")
+
+logs_path = os.path.join(app_path, "logs")
+
+os.makedirs(logs_path, exist_ok=True)
 
 logger = logging.getLogger("control_hub")
 logger.setLevel(logging.INFO)
 
-proc_handler = logging.FileHandler("logs/process.log", encoding="utf-8")
+proc_handler = logging.FileHandler(
+    os.path.join(logs_path, "process.log"), encoding="utf-8"
+)
 proc_handler.setLevel(logging.INFO)
 proc_handler.addFilter(lambda record: record.levelno <= logging.INFO)
 
-error_handler = logging.FileHandler("logs/error.log", encoding="utf-8")
+error_handler = logging.FileHandler(
+    os.path.join(logs_path, "error.log"), encoding="utf-8"
+)
 error_handler.setLevel(logging.ERROR)
 
 formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
@@ -78,11 +92,6 @@ class ExecutionRecord(TypedDict):
     user: str
     created: str
     updated: str
-
-
-app_path = os.getcwd()
-python_executable = os.path.join(app_path, "python", "python.exe")
-
 
 class NetworkUtils:
     @staticmethod
