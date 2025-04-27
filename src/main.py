@@ -181,19 +181,19 @@ class CodeExecutor:
 
 class DatabaseClient:
     def __init__(self, server_url: str, token: str):
-        self.pocketbase = PocketBase(server_url)
-        self.pocketbase._inners.client = AsyncClient(base_url=server_url, timeout=None)
+        self.pb = PocketBase(server_url)
+        self.pb._inners.client = AsyncClient(base_url=server_url, timeout=None)
         self.token = token
         self.params = {"token": token}
 
     async def get_computer(self) -> Computer:
-        data = await self.pocketbase.collection("computers").get_first(
+        data = await self.pb.collection("computers").get_first(
             {"params": self.params}
         )
         return Computer(**data)
 
     async def update_computer(self, computer_id: str, data: Dict[str, Any]) -> Computer:
-        updated = await self.pocketbase.collection("computers").update(
+        updated = await self.pb.collection("computers").update(
             computer_id, data, {"params": self.params}
         )
         return Computer(**updated)
@@ -201,7 +201,7 @@ class DatabaseClient:
     async def update_execution(
         self, execution_id: str, data: Dict[str, Any]
     ) -> ExecutionRecord:
-        updated = await self.pocketbase.collection("executions").update(
+        updated = await self.pb.collection("executions").update(
             execution_id, data, {"params": self.params}
         )
         return ExecutionRecord(**updated)
@@ -214,14 +214,14 @@ class DatabaseClient:
             "headers": {},
             "params": {"token": self.token, "filter": filter_query},
         }
-        return await self.pocketbase.collection("executions").subscribe_all(
+        return await self.pb.collection("executions").subscribe_all(
             callback, params
         )
 
     async def keep_alive(self) -> None:
         while True:
             await asyncio.sleep(50 * 60)
-            await self.pocketbase.realtime._transmit_subscriptions(force=True)
+            await self.pb.realtime._transmit_subscriptions(force=True)
 
 
 class ExecutionTracker:
