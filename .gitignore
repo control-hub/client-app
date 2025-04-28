@@ -187,3 +187,4 @@ src/output/*
 
 # Python executable files get here from python folder https://github.com/winpython/winpython/releases/download/15.0.20250330/Winpython64-3.12.9.1dotb2.zip
 src/python/*
+data.json

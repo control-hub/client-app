@@ -7,13 +7,16 @@ import uuid
 import tempfile
 import traceback
 import logging
+import shutil
 import time
+import json
 
-from httpx import AsyncClient
+from httpx import AsyncClient, Timeout
 from pocketbase import PocketBase
 from pocketbase.models.dtos import RealtimeEvent
 from dotenv import load_dotenv
 from typing import TypedDict, Dict, Set, Callable, Optional, Any, Tuple
+from types import NoneType
 
 
 if getattr(sys, "frozen", False):
@@ -26,7 +29,9 @@ load_dotenv(override=True)
 app_path = os.getcwd()
 python_executable = os.path.join(app_path, "python", "python.exe")
 
-logs_path = os.path.join(app_path, "logs")
+program_data = os.getenv("PROGRAMDATA")
+logs_base = os.path.join(program_data, "ControlHub")
+logs_path = os.path.join(logs_base, "logs")
 
 os.makedirs(logs_path, exist_ok=True)
 
@@ -72,6 +77,7 @@ class Computer(TypedDict):
     ip: str
     mac: str
     name: str
+    data: dict | NoneType
     region: str
     status: str # 0: offline, 1: online, 2: busy
     token: str
@@ -90,6 +96,7 @@ class ExecutionRecord(TypedDict):
     computer: str
     script: str
     user: str
+    invisible: bool
     created: str
     updated: str
 
@@ -113,24 +120,26 @@ class NetworkUtils:
 
 class CodeExecutor:
     @staticmethod
-    async def execute_code(code: str, execution_id: str) -> Tuple[str, bool]:
-        return await CodeExecutor._run(code, execution_id)
+    async def execute_code(code: str, execution_id: str, data: dict | NoneType = None) -> Tuple[str, dict, bool]:
+        return await CodeExecutor._run(code, execution_id, data)
 
     @staticmethod
-    async def run_command(command: list[str]) -> dict:
+    async def run_command(command: list[str], cwd: str = None) -> dict:
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW,
+                cwd=cwd,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
             )
 
             stdout_data, stderr_data = await process.communicate()
             output = (
-                stdout_data.decode("cp866", errors="replace")
+                stdout_data.decode("utf-8", errors="replace")
                 + "\n"
-                + stderr_data.decode("cp866", errors="replace")
+                + stderr_data.decode("utf-8", errors="replace")
             )
 
             return {
@@ -152,16 +161,27 @@ class CodeExecutor:
             }
 
     @staticmethod
-    async def _run(code: str, execution_id: str) -> Tuple[str, bool]:
+    async def _run(code: str, execution_id: str, data: dict | NoneType = None) -> Tuple[str, dict, bool]:
         temp_dir = tempfile.gettempdir()
-        temp_filename = os.path.join(temp_dir, f"exec_{execution_id}.py")
+        exec_dir = os.path.join(temp_dir, f"exec_{execution_id}")
 
-        logger.info(f"Executing in temp file: {temp_filename}")
+        temp_filename = os.path.join(exec_dir, "script.py")
+        temp_data_filename = os.path.join(exec_dir, "data.json")
+        
+        logger.info(f"Executing in temp directory: {exec_dir}")
+
+        os.makedirs(exec_dir, exist_ok=True)
 
         with open(temp_filename, "w", encoding="utf-8") as file:
             file.write(code)
+        
+        with open(temp_data_filename, "w", encoding="utf-8") as file:
+            file.write(json.dumps(data) if data is not None else "{}")
 
-        result = await CodeExecutor.run_command([python_executable, temp_filename])
+        result = await CodeExecutor.run_command([python_executable, temp_filename], cwd=exec_dir)
+
+        with open(temp_data_filename, "r", encoding="utf-8") as file:
+            data = json.loads(file.read())
 
         if result["success"]:
             logger.info(f"[{execution_id}] Success:\n{result['stdout']}")
@@ -169,12 +189,13 @@ class CodeExecutor:
             logger.error(f"[{execution_id}] Failure:\n{result['traceback']}")
 
         try:
-            os.unlink(temp_filename)
+            shutil.rmtree(exec_dir)
         except Exception as err:
             logger.error(f"Temp deletion error: {err}", exc_info=err)
 
         return (
             result["stdout"] if result["success"] else result["traceback"],
+            data,
             result["success"],
         )
 
@@ -182,7 +203,8 @@ class CodeExecutor:
 class DatabaseClient:
     def __init__(self, server_url: str, token: str):
         self.pb = PocketBase(server_url)
-        self.pb._inners.client = AsyncClient(base_url=server_url, timeout=None)
+        timeout = Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
+        self.pb._inners.client = AsyncClient(base_url=server_url, timeout=timeout)
         self.token = token
         self.params = {"token": token}
 
@@ -206,6 +228,53 @@ class DatabaseClient:
         )
         return ExecutionRecord(**updated)
 
+    async def create_invisible_execution(
+        self, computer: Computer
+    ) -> ExecutionRecord:
+        return ExecutionRecord(** await self.pb.collection("executions").create(
+            {
+                "computer": computer["id"],
+                "invisible": True,
+                "executable": "pass",
+                "logs": "",
+                "status": 0,
+            },
+            {"params": self.params},
+        ))
+    
+    async def get_invisible_execution(self, computer: Computer) -> Optional[ExecutionRecord]:
+        try:
+            invisible_execution = await self.pb.collection("executions").get_first(
+                {"filter": 'invisible=true', "params": self.params}
+            )
+            
+            return ExecutionRecord(**invisible_execution)
+        except Exception as err:            
+            logger.error("Invisible execution not found, creating one", exc_info=err)
+            return await self.create_invisible_execution(computer)
+
+    async def switch_invisible_execution(
+        self, execution: ExecutionRecord
+    ):
+        if execution["status"] == "0":
+            logger.info("Switching invisible execution to 1")
+            await self.pb.collection("executions").update(
+                execution["id"],
+                {"status": 1},
+                {"params": self.params},
+            )
+            execution["status"] = "1"
+            
+        else:
+            logger.info("Switching invisible execution to 0")
+            await self.pb.collection("executions").update(
+                execution["id"],
+                {"status": 0},
+                {"params": self.params},
+            )
+            execution["status"] = "0"
+
+
     async def subscribe_to_executions(
         self, computer_id: str, callback: Callable[[RealtimeEvent], Any]
     ):
@@ -217,12 +286,7 @@ class DatabaseClient:
         return await self.pb.collection("executions").subscribe_all(
             callback, params
         )
-
-    async def keep_alive(self) -> None:
-        while True:
-            await asyncio.sleep(50 * 60)
-            await self.pb.realtime._transmit_subscriptions(force=True)
-
+            
 
 class ExecutionTracker:
     def __init__(self):
@@ -254,18 +318,21 @@ class AgentService:
         self.executor = CodeExecutor()
         self.tracker = ExecutionTracker()
         self.computer: Optional[Computer] = None
+        self.invisible_execution: Optional[ExecutionRecord] = None
 
     async def initialize(self) -> None:
         self.computer = await self.db_client.get_computer()
         computer_data = {
             "ip": await NetworkUtils.get_local_ip(),
             "mac": await NetworkUtils.get_mac_address(),
-            "status": 2,
         }
         self.computer = await self.db_client.update_computer(
             self.computer["id"], computer_data
         )
-        logger.info(f"Initialized for: {self.computer['name']} ({self.computer['ip']})")
+        self.invisible_execution = await self.db_client.get_invisible_execution(self.computer)
+        logger.info(
+            f"Initialized for: {self.computer['name']} ({self.computer['ip']}) with invisible_execution: {self.invisible_execution['id']}"
+        )            
 
     async def update_status(self, status: int) -> None:
         try:
@@ -277,7 +344,7 @@ class AgentService:
             logger.error(f"Status update failed: {err}", exc_info=err)
 
     async def handle_event(self, event: RealtimeEvent) -> None:
-        if event["action"] != "create":
+        if event["action"] != "create" or event["record"].get("invisible"):
             return
 
         execution_record = event["record"]
@@ -308,9 +375,10 @@ class AgentService:
         )
 
         start_time = time.time()
-        logs, succeeded = await self.executor.execute_code(
-            execution_record.get("executable"), execution_id
+        logs, data, succeeded = await self.executor.execute_code(
+            execution_record.get("executable"), execution_id, self.computer["data"]
         )
+        
         duration = time.time() - start_time
 
         await self.db_client.update_execution(
@@ -322,6 +390,14 @@ class AgentService:
                 "duration": duration,
             },
         )
+        
+        await self.db_client.update_computer(
+            self.computer["id"],
+            {
+                "data": data,
+                "status": 2
+            },
+        )
 
         last = self.tracker.remove_active(execution_id)
         if last:
@@ -331,19 +407,30 @@ class AgentService:
             f"Task completed: {execution_id} (Success: {succeeded}, Duration: {duration:.2f}s, Remaining: {self.tracker.active_count()})"
         )
 
-    async def run(self) -> None:
-        logger.info("Connecting...")
-        unsubscribe = await self.db_client.subscribe_to_executions(
-            self.computer["id"], self.handle_event
-        )
-        logger.info("Subscribed, waiting for tasks...")
+    async def keep_alive(self) -> None:
+        while True:
+            await asyncio.sleep(60 * 4)
+            await self.db_client.switch_invisible_execution(self.invisible_execution)
 
+    async def run(self) -> None:
         try:
             while True:
-                await self.db_client.keep_alive()
+                try:
+                    logger.info("Connecting...")
+                    unsubscribe = await self.db_client.subscribe_to_executions(
+                        self.computer["id"], self.handle_event
+                    )
+                                        
+                    await self.update_status(2)
+                    logger.info("Subscribed, waiting for tasks...")
+                    await self.keep_alive()
+                
+                except Exception as err:
+                    logger.error(f"Connection error: {err}", exc_info=err)
+                    await asyncio.sleep(5)
         finally:
             if self.computer:
-                await self.db_client.update_computer(self.computer["id"], {"status": 0})
+                await self.update_status(0)
             if "unsubscribe" in locals():
                 await unsubscribe()
                 logger.info("Unsubscribed")
