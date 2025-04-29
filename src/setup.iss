@@ -1,7 +1,7 @@
 ; Inno Setup script for ControlHub installer
 
 #define MyAppName "ControlHub"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.3.1"
 #define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"
@@ -41,6 +41,12 @@ Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../.gitignore"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../README.md"; DestDir: "{app}"; Flags: ignoreversion
+
+[Registry]
+; auto startup on Windows lunch (Run)
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+  ValueType: string; ValueName: "{#MyAppName}"; \
+  ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue
 
 [Code]
 var
@@ -97,11 +103,27 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
     // Create .env file with token after installation is complete
     SaveStringToFile(ExpandConstant('{app}\.env'), 'TOKEN=' + ValidToken, False);
+
+    // Create task for auto wake up through Windows Task Scheduler
+    Exec('SCHTASKS',
+      '/Create /F /TN "ControlHub AutoStart" ' +
+      '/TR "' + ExpandConstant('{app}\{#MyAppExeName}') + '" ' +
+      '/SC ONLOGON /RL HIGHEST',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    // Task copy for waking up the computer from sleep
+    Exec('SCHTASKS',
+      '/Create /F /TN "ControlHub Resume" ' +
+      '/TR "' + ExpandConstant('{app}\{#MyAppExeName}') + '" ' +
+      '/SC ONSTART /RL HIGHEST',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 
