@@ -148,7 +148,7 @@ class CodeExecutor:
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 cwd=cwd,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "PROGRAMPATH": app_path},
             )
 
             stdout_data, stderr_data = await process.communicate()
