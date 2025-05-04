@@ -63,6 +63,7 @@ logger.addHandler(error_handler)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("pocketbase").setLevel(logging.WARNING)
 
+
 def handle_uncaught_exception(exc_type, exc_value, exc_tb):
     logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
 
@@ -148,7 +149,12 @@ class CodeExecutor:
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 cwd=cwd,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "PROGRAMPATH": app_path},
+                env={
+                    **os.environ,
+                    "PYTHONIOENCODING": "utf-8",
+                    "PYTHONUTF8": "1",
+                    "PROGRAMPATH": app_path,
+                },
             )
 
             stdout_data, stderr_data = await process.communicate()
@@ -303,10 +309,12 @@ class DatabaseClient:
             "headers": {},
             "params": {"token": self.token, "filter": filter_query},
         }
-        unsubscribe = await self.pb.collection("executions").subscribe_all(callback, params)
+        unsubscribe = await self.pb.collection("executions").subscribe_all(
+            callback, params
+        )
 
         logger.debug(f"Subscribed to executions for computer {computer_id}")
-        
+
         return unsubscribe
 
 
@@ -348,15 +356,15 @@ class AgentService:
             "ip": await NetworkUtils.get_local_ip(),
             "mac": await NetworkUtils.get_mac_address(),
         }
-        
+
         logger.debug(f"Computer data: {self.computer}")
-        
+
         self.computer = await self.db_client.update_computer(
             self.computer["id"], computer_data
         )
-        
+
         logger.debug(f"Updated computer data: {self.computer}")
-        
+
         self.invisible_execution = await self.db_client.get_invisible_execution(
             self.computer
         )
@@ -379,15 +387,15 @@ class AgentService:
             return
         execution_record = event["record"]
         execution_id = execution_record.get("id")
-        
+
         logger.debug(f"Processing execution: {execution_id}")
-        
+
         if self.tracker.already_executed(execution_id):
             return
         self.tracker.mark_executed(execution_id)
         if execution_record.get("completed"):
             return
-        
+
         asyncio.create_task(self.process_execution(execution_record, execution_id))
 
     async def process_execution(
@@ -423,9 +431,9 @@ class AgentService:
         last = self.tracker.remove_active(execution_id)
         if last:
             await self.update_status(2)
-        
+
         logger.debug(f"Task {execution_id} completed: {succeeded}")
-        
+
         logger.info(
             f"Task completed: {execution_id} (Success: {succeeded}, Duration: {duration:.2f}s, Remaining: {self.tracker.active_count()})"
         )
@@ -444,7 +452,7 @@ class AgentService:
                     unsubscribe = await self.db_client.subscribe_to_executions(
                         self.computer["id"], self.handle_event
                     )
-                                        
+
                     await self.update_status(2)
                     logger.info("Subscribed, waiting for tasks...")
                     await self.keep_alive()
@@ -465,14 +473,20 @@ class AgentService:
 async def main() -> None:
     SERVER_URL = "https://pb.control-hub.org"
     TOKEN = os.getenv("TOKEN")
-    
+
     if not TOKEN:
         logger.error("TOKEN not set")
         return
-    
+
     agent = AgentService(SERVER_URL, TOKEN)
-    await agent.initialize()
-    await agent.run()
+
+    while True:
+        try:
+            await agent.initialize()
+            await agent.run()
+        except Exception as err:
+            logger.error(f"Agent error: {err}", exc_info=err)
+            await asyncio.sleep(20)
 
 
 if __name__ == "__main__":
