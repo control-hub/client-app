@@ -471,7 +471,7 @@ class AgentService:
 
 
 async def main() -> None:
-    SERVER_URL = "https://pb.control-hub.org"
+    SERVER_URL = os.getenv("CONTROLHUB_SERVER_URL", "https://pb.control-hub.org")
     TOKEN = os.getenv("TOKEN")
 
     if not TOKEN:
