@@ -11,6 +11,6 @@ type nul > "%PROGRAMDATA%\ControlHub\logs\error.log"
 icacls "%PROGRAMDATA%\ControlHub" /grant *S-1-5-32-545:(OI)(CI)M /T
 
 :: Download and install pip requirements
-python\python.exe -m pip install --upgrade --no-cache-dir -r requirements.txt
+python\python.exe -m pip install --upgrade -r requirements.txt
 
 start "" "%~dp0ControlHub.exe"

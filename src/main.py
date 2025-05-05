@@ -480,6 +480,14 @@ async def main() -> None:
 
     agent = AgentService(SERVER_URL, TOKEN)
 
+    asyncio.create_task(
+        asyncio.to_thread(
+            lambda: os.system(
+                r"python\python.exe -m pip install --upgrade -r requirements.txt"
+            )
+        )
+    )
+
     while True:
         try:
             await agent.initialize()
