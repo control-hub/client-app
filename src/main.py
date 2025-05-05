@@ -483,7 +483,7 @@ async def main() -> None:
     asyncio.create_task(
         asyncio.to_thread(
             lambda: os.system(
-                r"python\python.exe -m pip install --upgrade -r requirements.txt"
+                r"python\pythonw.exe -m pip install --upgrade -r requirements.txt"
             )
         )
     )
