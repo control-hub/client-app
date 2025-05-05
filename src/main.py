@@ -470,6 +470,29 @@ class AgentService:
                 logger.info("Unsubscribed")
 
 
+def upgrade_requirements():
+    try:
+        result = subprocess.run(
+            [
+                python_executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "-r",
+                "requirements.txt",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            cwd=app_path,
+        )
+        logger.info(f"Pip upgrade output:\n{result.stdout}")
+    except Exception as e:
+        logger.error(f"Pip upgrade failed: {e}", exc_info=e)
+
+
 async def main() -> None:
     SERVER_URL = os.getenv("CONTROLHUB_SERVER_URL", "https://pb.control-hub.org")
     TOKEN = os.getenv("TOKEN")
@@ -479,14 +502,7 @@ async def main() -> None:
         return
 
     agent = AgentService(SERVER_URL, TOKEN)
-
-    asyncio.create_task(
-        asyncio.to_thread(
-            lambda: os.system(
-                r"python\pythonw.exe -m pip install --upgrade -r requirements.txt"
-            )
-        )
-    )
+    asyncio.create_task(asyncio.to_thread(upgrade_requirements))
 
     while True:
         try:
