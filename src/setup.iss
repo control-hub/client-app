@@ -1,7 +1,7 @@
 ; Inno Setup script for ControlHub installer
 
 #define MyAppName "ControlHub"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.4.1"
 #define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"
@@ -36,104 +36,105 @@ Source: "install.bat"; DestDir: "{app}"
 Source: "ControlHub.exe"; DestDir: "{app}"
 Source: "requirements.txt"; DestDir: "{app}"
 Source: "uninstall.bat"; DestDir: "{app}"
-Source: "python\*"; DestDir: "{app}\python"; Flags: recursesubdirs createallsubdirs
+Source: "python/*"; DestDir: "{app}\python"; Flags: recursesubdirs createallsubdirs
 Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../.gitignore"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
-; auto startup on Windows lunch (Run)
+; auto startup on Windows
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
   ValueType: string; ValueName: "{#MyAppName}"; \
   ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue
 
+; and for Windows x64
+Root: HKCU64; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+  ValueType: string; ValueName: "{#MyAppName}x64"; \
+  ValueData: "{app}\{#MyAppExeName}"; Check: IsWin64; \
+  Flags: uninsdeletevalue
+
 [Code]
 var
-  TokenPage: TInputQueryWizardPage;
-  ValidToken: String;
-  
+  DomainPage, TokenPage: TInputQueryWizardPage;
+  ServerURL, UserToken: String;
+
 procedure InitializeWizard;
 begin
-  TokenPage := CreateInputQueryPage(wpWelcome,
-    'Token Validation', 'Enter your token',
-    'Please enter your ControlHub token below, then click Next:');
-  TokenPage.Add('Token:', False);
+  DomainPage := CreateInputQueryPage(wpWelcome,
+    'API Server URL', 'Specify the ControlHub API server URL',
+    'Default is https://pb.control-hub.org. You may enter a custom domain:');
+  DomainPage.Add('Server URL:', False);
+  DomainPage.Values[0] := 'https://pb.control-hub.org';
+
+  TokenPage := CreateInputQueryPage(DomainPage.ID,
+    'Token Entry', 'Enter your ControlHub access token',
+    'Provide the token for ' + DomainPage.Values[0] + ':');
+  TokenPage.Add('Access Token:', False);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  Token: String;
-  WinHttpReq: Variant;
-  Response: String;
+  RespText: String;
+  WinHttp: Variant;
 begin
   Result := True;
-  
-  if CurPageID = TokenPage.ID then
+
+  if CurPageID = DomainPage.ID then
   begin
-    Token := TokenPage.Values[0];
-    if Token = '' then
+    ServerURL := Trim(DomainPage.Values[0]);
+    if (ServerURL = '') or ((Pos('http://', LowerCase(ServerURL)) <> 1) and (Pos('https://', LowerCase(ServerURL)) <> 1)) then
     begin
-      MsgBox('Please enter a valid token.', mbError, MB_OK);
+      MsgBox('Please enter a valid URL starting with http:// or https://', mbError, MB_OK);
       Result := False;
-      exit;
+      Exit;
     end;
-    
-    try
-      // Use Windows COM object to make the HTTP request
-      WinHttpReq := CreateOleObject('WinHttp.WinHttpRequest.5.1');
-      WinHttpReq.Open('GET', 'https://pb.control-hub.org/api/collections/computers/records?token=' + Token, false);
-      WinHttpReq.Send('');
-      Response := WinHttpReq.ResponseText;
-          
-      if Pos('"totalItems":0', Response) > 0 then
-      begin
-        MsgBox('Invalid token. Please try again.', mbError, MB_OK);
-        Result := False;
-        exit;
-      end;
-      
-      // Store the valid token to use later
-      ValidToken := Token;
-    except
-      MsgBox('Failed to connect to server. Please check your internet connection and try again.', mbError, MB_OK);
+  end
+  else if CurPageID = TokenPage.ID then
+  begin
+    UserToken := Trim(TokenPage.Values[0]);
+    if UserToken = '' then
+    begin
+      MsgBox('Token cannot be empty.', mbError, MB_OK);
       Result := False;
+      Exit;
+    end;
+    try
+      WinHttp := CreateOleObject('WinHttp.WinHttpRequest.5.1');
+      WinHttp.Open('GET', ServerURL + '/api/collections/computers/records?token=' + UserToken, False);
+      WinHttp.Send('');
+      RespText := WinHttp.ResponseText;
+      if Pos('"totalItems":0', RespText) > 0 then
+      begin
+        MsgBox('Invalid token for ' + ServerURL, mbError, MB_OK);
+        Result := False;
+        Exit;
+      end;
+    except
+      MsgBox('Cannot connect to ' + ServerURL + '. Check your network and URL.', mbError, MB_OK);
+      Result := False;
+      Exit;
     end;
   end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var
-  ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
-    // Create .env file with token after installation is complete
-    SaveStringToFile(ExpandConstant('{app}\.env'), 'TOKEN=' + ValidToken, False);
-
-    // Create task for auto wake up through Windows Task Scheduler
-    Exec('SCHTASKS',
-      '/Create /F /TN "ControlHub AutoStart" ' +
-      '/TR "' + ExpandConstant('{app}\{#MyAppExeName}') + '" ' +
-      '/SC ONLOGON /RL HIGHEST',
-      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-
-    // Task copy for waking up the computer from sleep
-    Exec('SCHTASKS',
-      '/Create /F /TN "ControlHub Resume" ' +
-      '/TR "' + ExpandConstant('{app}\{#MyAppExeName}') + '" ' +
-      '/SC ONSTART /RL HIGHEST',
-      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    SaveStringToFile(ExpandConstant('{app}\.env'),
+      'CONTROLHUB_SERVER_URL=' + ServerURL + #13#10 +
+      'TOKEN=' + UserToken,
+      False);
   end;
 end;
 
 procedure DeinitializeUninstall;
 var
-  ResultCode: Integer;
+  ExitCode: Integer;
 begin
-  Exec('taskkill', '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill', '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ExitCode);
 end;
-
 
 
 [UninstallRun]
