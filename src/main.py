@@ -77,7 +77,7 @@ asyncio.get_event_loop().set_exception_handler(
 )
 
 
-class Computer(TypedDict):
+class ComputerRecord(TypedDict):
     collectionId: str
     collectionName: str
     id: str
@@ -134,26 +134,30 @@ class NetworkUtils:
 class CodeExecutor:
     @staticmethod
     async def execute_code(
-        code: str, execution_id: str, data: dict | NoneType = None
+        code: str, execution_id: str, additional_env: dict = {}
     ) -> Tuple[str, dict, bool]:
-        logger.debug(f"Executing code for id {execution_id}: {code} with data {data}")
-        return await CodeExecutor._run(code, execution_id, data)
+        logger.debug(f"Executing code for id {execution_id}: {code}")
+        return await CodeExecutor._run(code, execution_id, additional_env)
 
     @staticmethod
-    async def run_command(command: list[str], cwd: str = None) -> dict:
+    async def run_command(
+        command: list[str], cwd: str = None, additional_env: dict = {}
+    ) -> dict:
         logger.debug(f"Running command: {command} cwd: {cwd}")
         try:
+            creationflags = subprocess.CREATE_NO_WINDOW
+            
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=creationflags,
                 cwd=cwd,
                 env={
                     **os.environ,
                     "PYTHONIOENCODING": "utf-8",
                     "PYTHONUTF8": "1",
-                    "PROGRAMPATH": app_path,
+                    **additional_env,
                 },
             )
 
@@ -187,13 +191,14 @@ class CodeExecutor:
 
     @staticmethod
     async def _run(
-        code: str, execution_id: str, data: dict | NoneType = None
+        code: str,
+        execution_id: str,
+        additional_env: dict = {},
     ) -> Tuple[str, dict, bool]:
         temp_dir = tempfile.gettempdir()
         exec_dir = os.path.join(temp_dir, f"exec_{execution_id}")
 
         temp_filename = os.path.join(exec_dir, "script.py")
-        temp_data_filename = os.path.join(exec_dir, "data.json")
 
         logger.info(f"Executing in temp directory: {exec_dir}")
         os.makedirs(exec_dir, exist_ok=True)
@@ -201,15 +206,9 @@ class CodeExecutor:
         with open(temp_filename, "w", encoding="utf-8") as file:
             file.write(code)
 
-        with open(temp_data_filename, "w", encoding="utf-8") as file:
-            file.write(json.dumps(data) if data is not None else "{}")
-
         result = await CodeExecutor.run_command(
-            [python_executable, temp_filename], cwd=exec_dir
+            [python_executable, temp_filename], exec_dir, additional_env
         )
-
-        with open(temp_data_filename, "r", encoding="utf-8") as file:
-            data = json.loads(file.read())
 
         if result["success"]:
             logger.info(f"[{execution_id}] Success:\n{result['stdout']}")
@@ -223,7 +222,6 @@ class CodeExecutor:
 
         return (
             result["stdout"] if result["success"] else result["traceback"],
-            data,
             result["success"],
         )
 
@@ -236,17 +234,19 @@ class DatabaseClient:
         self.token = token
         self.params = {"token": token}
 
-    async def get_computer(self) -> Computer:
+    async def get_computer(self) -> ComputerRecord:
         data = await self.pb.collection("computers").get_first({"params": self.params})
         logger.debug(f"Computer data: {data}")
-        return Computer(**data)
+        return ComputerRecord(**data)
 
-    async def update_computer(self, computer_id: str, data: Dict[str, Any]) -> Computer:
+    async def update_computer(
+        self, computer_id: str, data: Dict[str, Any]
+    ) -> ComputerRecord:
         updated = await self.pb.collection("computers").update(
             computer_id, data, {"params": self.params}
         )
         logger.debug(f"Updated computer data: {updated}")
-        return Computer(**updated)
+        return ComputerRecord(**updated)
 
     async def update_execution(
         self, execution_id: str, data: Dict[str, Any]
@@ -257,7 +257,9 @@ class DatabaseClient:
         logger.debug(f"Updated execution data: {updated}")
         return ExecutionRecord(**updated)
 
-    async def create_invisible_execution(self, computer: Computer) -> ExecutionRecord:
+    async def create_invisible_execution(
+        self, computer: ComputerRecord
+    ) -> ExecutionRecord:
         return ExecutionRecord(
             **await self.pb.collection("executions").create(
                 {
@@ -272,7 +274,7 @@ class DatabaseClient:
         )
 
     async def get_invisible_execution(
-        self, computer: Computer
+        self, computer: ComputerRecord
     ) -> Optional[ExecutionRecord]:
         try:
             invisible_execution = await self.pb.collection("executions").get_first(
@@ -284,31 +286,25 @@ class DatabaseClient:
             return await self.create_invisible_execution(computer)
 
     async def switch_invisible_execution(self, execution: ExecutionRecord):
-        if execution["status"] == "0":
-            logger.info("Switching invisible execution to 1")
-            await self.pb.collection("executions").update(
-                execution["id"],
-                {"status": 1},
-                {"params": self.params},
-            )
-            execution["status"] = "1"
-        else:
-            logger.info("Switching invisible execution to 0")
-            await self.pb.collection("executions").update(
-                execution["id"],
-                {"status": 0},
-                {"params": self.params},
-            )
-            execution["status"] = "0"
+        execution["status"] = str((int(execution["status"]) + 1) % 4)
+
+        logger.info(f"Switching invisible execution to {execution['status']}")
+        await self.pb.collection("executions").update(
+            execution["id"],
+            {"status": execution["status"]},
+            {"params": self.params},
+        )
 
     async def subscribe_to_executions(
         self, computer_id: str, callback: Callable[[RealtimeEvent], Any]
     ):
         filter_query = f'computer.id="{computer_id}"'
+
         params = {
             "headers": {},
             "params": {"token": self.token, "filter": filter_query},
         }
+
         unsubscribe = await self.pb.collection("executions").subscribe_all(
             callback, params
         )
@@ -347,7 +343,7 @@ class AgentService:
         self.db_client = DatabaseClient(server_url, token)
         self.executor = CodeExecutor()
         self.tracker = ExecutionTracker()
-        self.computer: Optional[Computer] = None
+        self.computer: Optional[ComputerRecord] = None
         self.invisible_execution: Optional[ExecutionRecord] = None
 
     async def initialize(self) -> None:
@@ -355,6 +351,7 @@ class AgentService:
         computer_data = {
             "ip": await NetworkUtils.get_local_ip(),
             "mac": await NetworkUtils.get_mac_address(),
+            "status": "2",
         }
 
         logger.debug(f"Computer data: {self.computer}")
@@ -368,6 +365,7 @@ class AgentService:
         self.invisible_execution = await self.db_client.get_invisible_execution(
             self.computer
         )
+
         logger.info(
             f"Initialized for: {self.computer['name']} ({self.computer['ip']}) with invisible_execution: {self.invisible_execution['id']}"
         )
@@ -378,13 +376,19 @@ class AgentService:
                 self.computer["id"], {"status": status}
             )
             logger.info(f"Status updated: {status}")
+
         except Exception as err:
             logger.error(f"Status update failed: {err}", exc_info=err)
 
     async def handle_event(self, event: RealtimeEvent) -> None:
         logger.debug(f"Received event: {event}")
-        if event["action"] != "create" or event["record"].get("invisible"):
+        if (
+            event["action"] != "create"
+            or event["record"].get("invisible")
+            or event["record"]["computer"] != self.computer.get("id")
+        ):
             return
+
         execution_record = event["record"]
         execution_id = execution_record.get("id")
 
@@ -392,7 +396,9 @@ class AgentService:
 
         if self.tracker.already_executed(execution_id):
             return
+
         self.tracker.mark_executed(execution_id)
+
         if execution_record.get("completed"):
             return
 
@@ -404,16 +410,27 @@ class AgentService:
         first = self.tracker.add_active(execution_id)
         if first:
             await self.update_status(1)
+
         logger.info(
             f"Starting task: {execution_id} (Active: {self.tracker.active_count()})"
         )
+
         await self.db_client.update_execution(
             execution_id, {"logs": "Execution started...\n", "status": "1"}
         )
+
         start_time = time.time()
-        logs, data, succeeded = await self.executor.execute_code(
-            execution_record.get("executable"), execution_id, self.computer["data"]
+        logs, succeeded = await self.executor.execute_code(
+            execution_record.get("executable"),
+            execution_id,
+            {
+                "CONTROLHUB": app_path,
+                "EXECUTION_ID": execution_id,
+                "COMPUTER_JSON": json.dumps(self.computer, ensure_ascii=True),
+                "EXECUTION_START_TIME": str(start_time),
+            },
         )
+
         duration = time.time() - start_time
         await self.db_client.update_execution(
             execution_id,
@@ -424,11 +441,9 @@ class AgentService:
                 "duration": duration,
             },
         )
-        await self.db_client.update_computer(
-            self.computer["id"],
-            {"data": data, "status": 2},
-        )
+
         last = self.tracker.remove_active(execution_id)
+
         if last:
             await self.update_status(2)
 
@@ -441,7 +456,7 @@ class AgentService:
     async def keep_alive(self) -> None:
         while True:
             logger.debug("Keeping alive...")
-            await asyncio.sleep(60 * 4)
+            await asyncio.sleep(60 * 4)  # 4 min.
             await self.db_client.switch_invisible_execution(self.invisible_execution)
 
     async def run(self) -> None:
@@ -449,19 +464,20 @@ class AgentService:
             while True:
                 try:
                     logger.info("Connecting...")
+                    await self.initialize()
+
                     unsubscribe = await self.db_client.subscribe_to_executions(
                         self.computer["id"], self.handle_event
                     )
 
-                    await self.update_status(2)
                     logger.info("Subscribed, waiting for tasks...")
                     await self.keep_alive()
                 except (httpx.ConnectError, HTTPCoreConnectError) as err:
-                    logger.warning(f"Realtime connection lost, retry in 5s: {err}")
-                    await asyncio.sleep(5)
+                    logger.warning(f"Realtime connection lost, retry in 20s: {err}")
+                    await asyncio.sleep(20)
                 except Exception as err:
                     logger.error(f"Connection error: {err}", exc_info=err)
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(20)
         finally:
             if self.computer:
                 await self.update_status(0)
@@ -506,7 +522,6 @@ async def main() -> None:
 
     while True:
         try:
-            await agent.initialize()
             await agent.run()
         except Exception as err:
             logger.error(f"Agent error: {err}", exc_info=err)
