@@ -46,14 +46,7 @@ Source: "../README.md"; DestDir: "{app}"; Flags: ignoreversion
 ; auto startup on Windows
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
   ValueType: string; ValueName: "{#MyAppName}"; \
-  ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletevalue;
-  Tasks: AutoRunRegistry;
-
-; and for Windows x64
-Root: HKCU64; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
-  ValueType: string; ValueName: "{#MyAppName}"; \
-  ValueData: "{app}\{#MyAppExeName}"; Check: IsWin64; \
-  Flags: uninsdeletevalue; Tasks: AutoRunRegistry;
+  ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; \
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"

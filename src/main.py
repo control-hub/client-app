@@ -109,13 +109,13 @@ class ExecutionRecord(TypedDict):
     updated: str
 
 
-def replace_last_spaces(string: str):
+def format_logs(string: str):
     if string.endswith("\n\n"):
         string = string[:-2]
     elif string.endswith("\n"):
         string = string[:-1]
 
-    return string
+    return string[:10000]
 
 
 class NetworkUtils:
@@ -460,7 +460,7 @@ class AgentService:
         await self.db_client.update_execution(
             execution_id,
             {
-                "logs": replace_last_spaces(logs),
+                "logs": format_logs(logs),
                 "completed": True,
                 "status": "2" if succeeded else "3",
                 "duration": duration,
