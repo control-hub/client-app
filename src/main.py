@@ -1,3 +1,4 @@
+import copy
 import sys
 import os
 import asyncio
@@ -108,6 +109,15 @@ class ExecutionRecord(TypedDict):
     updated: str
 
 
+def replace_last_spaces(string: str):
+    if string.endswith("\n\n"):
+        string = string[:-2]
+    elif string.endswith("\n"):
+        string = string[:-1]
+
+    return string
+
+
 class NetworkUtils:
     @staticmethod
     async def get_local_ip() -> str:
@@ -146,7 +156,7 @@ class CodeExecutor:
         logger.debug(f"Running command: {command} cwd: {cwd}")
         try:
             creationflags = subprocess.CREATE_NO_WINDOW
-            
+
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.PIPE,
@@ -233,9 +243,12 @@ class DatabaseClient:
         self.pb._inners.client = AsyncClient(base_url=server_url, timeout=timeout)
         self.token = token
         self.params = {"token": token}
+        self.options = {"params": copy.deepcopy(self.params)}
 
     async def get_computer(self) -> ComputerRecord:
-        data = await self.pb.collection("computers").get_first({"params": self.params})
+        data = await self.pb.collection("computers").get_first(
+            copy.deepcopy(self.options)
+        )
         logger.debug(f"Computer data: {data}")
         return ComputerRecord(**data)
 
@@ -243,7 +256,7 @@ class DatabaseClient:
         self, computer_id: str, data: Dict[str, Any]
     ) -> ComputerRecord:
         updated = await self.pb.collection("computers").update(
-            computer_id, data, {"params": self.params}
+            computer_id, data, copy.deepcopy(self.options)
         )
         logger.debug(f"Updated computer data: {updated}")
         return ComputerRecord(**updated)
@@ -252,7 +265,7 @@ class DatabaseClient:
         self, execution_id: str, data: Dict[str, Any]
     ) -> ExecutionRecord:
         updated = await self.pb.collection("executions").update(
-            execution_id, data, {"params": self.params}
+            execution_id, data, copy.deepcopy(self.options)
         )
         logger.debug(f"Updated execution data: {updated}")
         return ExecutionRecord(**updated)
@@ -269,7 +282,7 @@ class DatabaseClient:
                     "logs": "",
                     "status": 0,
                 },
-                {"params": self.params},
+                copy.deepcopy(self.options),
             )
         )
 
@@ -278,7 +291,7 @@ class DatabaseClient:
     ) -> Optional[ExecutionRecord]:
         try:
             invisible_execution = await self.pb.collection("executions").get_first(
-                {"filter": "invisible=true", "params": self.params}
+                {"filter": "invisible=true", "params": copy.deepcopy(self.params)}
             )
             return ExecutionRecord(**invisible_execution)
         except Exception as err:
@@ -292,8 +305,20 @@ class DatabaseClient:
         await self.pb.collection("executions").update(
             execution["id"],
             {"status": execution["status"]},
-            {"params": self.params},
+            copy.deepcopy(self.options),
         )
+
+    async def check_computer_status(self, computer: ComputerRecord) -> ComputerRecord:
+        actual_computer = await self.pb.collection("computers").get_one(
+            computer["id"], copy.deepcopy(self.options)
+        )
+
+        if actual_computer["status"] == "0":
+            actual_computer = await self.pb.collection("computers").update(
+                actual_computer["id"], {"status": "2"}, copy.deepcopy(self.options)
+            )
+
+        return actual_computer
 
     async def subscribe_to_executions(
         self, computer_id: str, callback: Callable[[RealtimeEvent], Any]
@@ -306,7 +331,7 @@ class DatabaseClient:
         }
 
         unsubscribe = await self.pb.collection("executions").subscribe_all(
-            callback, params
+            callback, copy.deepcopy(params)
         )
 
         logger.debug(f"Subscribed to executions for computer {computer_id}")
@@ -435,7 +460,7 @@ class AgentService:
         await self.db_client.update_execution(
             execution_id,
             {
-                "logs": logs,
+                "logs": replace_last_spaces(logs),
                 "completed": True,
                 "status": "2" if succeeded else "3",
                 "duration": duration,
@@ -457,6 +482,7 @@ class AgentService:
         while True:
             logger.debug("Keeping alive...")
             await asyncio.sleep(60 * 4)  # 4 min.
+            self.computer = await self.db_client.check_computer_status(self.computer)
             await self.db_client.switch_invisible_execution(self.invisible_execution)
 
     async def run(self) -> None:
