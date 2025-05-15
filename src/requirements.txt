@@ -1,3 +1,2 @@
 controlhub
-psutil==7.0.0
 wakeonlan==3.1.0

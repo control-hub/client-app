@@ -1,7 +1,7 @@
 ; Inno Setup script for ControlHub installer
 
 #define MyAppName "ControlHub"
-#define MyAppVersion "1.5.3"
+#define MyAppVersion "1.5.4"
 #define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"
@@ -42,14 +42,9 @@ Source: "../.gitignore"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "../README.md"; DestDir: "{app}"; Flags: ignoreversion
 
-[Registry]
-; auto startup on Windows
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
-  ValueType: string; ValueName: "{#MyAppName}"; \
-  ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue; \
-
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"
+Name: "{commonstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Code]
 var
@@ -138,4 +133,4 @@ end;
 Filename: "{cmd}"; Parameters: "/c {app}\uninstall.bat"; WorkingDir: "{app}"; Flags: runhidden
 
 [Run]
-Filename: "{app}\install.bat"; Description: "Run installation script"; Flags: postinstall runascurrentuser
+Filename: "{app}\install.bat"; Description: "Run installation script"; Flags: postinstall runascurrentuser runhidden
