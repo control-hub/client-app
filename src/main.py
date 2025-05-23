@@ -78,7 +78,7 @@ asyncio.get_event_loop().set_exception_handler(
 )
 
 
-class ComputerRecord(TypedDict):
+class ComputerRecord(TypedDict, total=False):
     collectionId: str
     collectionName: str
     id: str
@@ -93,7 +93,7 @@ class ComputerRecord(TypedDict):
     created: str
 
 
-class ExecutionRecord(TypedDict):
+class ExecutionRecord(TypedDict, total=False):
     collectionId: str
     collectionName: str
     id: str
