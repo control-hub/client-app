@@ -46,6 +46,12 @@ Source: "../README.md"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
+[Run]
+Filename: "{app}\install.bat"; Description: "Run installation script"; Flags: postinstall runascurrentuser runhidden
+
+[UninstallRun]
+Filename: "{cmd}"; Parameters: "/c {app}\uninstall.bat"; WorkingDir: "{app}"; Flags: runhidden
+
 [Code]
 var
   DomainPage, TokenPage: TInputQueryWizardPage;
