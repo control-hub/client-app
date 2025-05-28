@@ -1,7 +1,7 @@
 ; Inno Setup script for ControlHub installer
 
 #define MyAppName "ControlHub"
-#define MyAppVersion "1.5.6"
+#define MyAppVersion "1.5.7"
 #define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"

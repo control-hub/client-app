@@ -31,7 +31,7 @@ load_dotenv(override=True)
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
 app_path = os.getcwd()
-python_executable = os.path.join(app_path, "python", "python.exe")
+python_executable = os.path.join(app_path, "python", "ipython.bat")
 
 program_data = os.getenv("PROGRAMDATA")
 logs_base = os.path.join(program_data, "ControlHub")
