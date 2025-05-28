@@ -33,6 +33,18 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 app_path = os.getcwd()
 python_executable = os.path.join(app_path, "python", "ipython.bat")
 
+python_lib_path = os.path.join(app_path, "python", "Lib", "site-packages")
+python_env = {
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONUSERBASE": "",
+    "PYTHONPATH": python_lib_path,
+    "PIP_USER": "false",
+    "PIP_PREFIX": "",
+    "PIP_TARGET": python_lib_path,
+    "PYTHONIOENCODING": "utf-8",
+    "PYTHONUTF8": "1",
+}
+
 program_data = os.getenv("PROGRAMDATA")
 logs_base = os.path.join(program_data, "ControlHub")
 logs_path = os.path.join(logs_base, "logs")
@@ -158,15 +170,14 @@ class CodeExecutor:
             creationflags = subprocess.CREATE_NO_WINDOW
 
             process = await asyncio.create_subprocess_exec(
-                *command,
+                *("cmd", "/C", *command),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=creationflags,
                 cwd=cwd,
                 env={
                     **os.environ,
-                    "PYTHONIOENCODING": "utf-8",
-                    "PYTHONUTF8": "1",
+                    **python_env,
                     **additional_env,
                 },
             )
