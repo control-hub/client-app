@@ -49,7 +49,7 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{a
 [Run]
 Filename: "{app}\install.bat"; Description: "Run installation script"; Flags: postinstall runascurrentuser runhidden
 Filename: "{sys}\schtasks.exe"; \
-  Parameters: "/Create /TN ""{#MyAppName} Autostart"" /TR ""'{app}\{#MyAppExeName}'"" /SC ONLOGON /RL HIGHEST /F"; \
+  Parameters: "/Create /TN ""{#MyAppName} Autostart"" /TR ""'{app}\{#MyAppExeName}'"" /SC ONLOGON /F"; \
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/c {app}\uninstall.bat"; WorkingDir: "{app}"; Flags: runhidden
