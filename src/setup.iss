@@ -1,7 +1,7 @@
 ; Inno Setup script for ControlHub installer
 
 #define MyAppName "ControlHub"
-#define MyAppVersion "1.5.5"
+#define MyAppVersion "1.5.6"
 #define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"
@@ -44,17 +44,7 @@ Source: "../README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"
-; Name: "{commonstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-
-[Run]
-Filename: "{app}\install.bat"; Description: "Run installation script"; Flags: postinstall runascurrentuser runhidden
-Filename: "{sys}\schtasks.exe"; \
-  Parameters: "/Create /TN ""{#MyAppName} Autostart"" /TR ""'{app}\{#MyAppExeName}'"" /SC ONLOGON /F"; \
-
-[UninstallRun]
-Filename: "{cmd}"; Parameters: "/c {app}\uninstall.bat"; WorkingDir: "{app}"; Flags: runhidden
-Filename: "{sys}\schtasks.exe"; \
-  Parameters: "/Delete /TN ""{#MyAppName} Autostart"" /F"; \
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Code]
 var
