@@ -1,7 +1,7 @@
 ; Inno Setup script for ControlHub installer
 
 #define MyAppName "ControlHub"
-#define MyAppVersion "1.5.7"
+#define MyAppVersion "1.5.8"
 #define MyAppPublisher "lixelv"
 #define MyAppURL "https://control-hub.org"
 #define MyAppExeName "ControlHub.exe"
@@ -19,35 +19,34 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-LicenseFile=../LICENSE
+LicenseFile=..\LICENSE
 OutputDir=installer
 OutputBaseFilename=ControlHub_Setup_{#MyAppVersion}
 SetupIconFile={#MyAppIcon}
 Compression=lzma
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppIcon}
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "install.bat"; DestDir: "{app}"
 Source: "ControlHub.exe"; DestDir: "{app}"
 Source: "requirements.txt"; DestDir: "{app}"
 Source: "uninstall.bat"; DestDir: "{app}"
-Source: "python/*"; DestDir: "{app}\python"; Flags: recursesubdirs createallsubdirs
+Source: "python\*"; DestDir: "{app}\python"; Flags: recursesubdirs createallsubdirs
 Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "../.gitignore"; DestDir: "{app}"; Flags: ignoreversion
-Source: "../LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "../README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\.gitignore"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
-Filename: "{app}\install.bat"; Description: "Run installation script"; Flags: postinstall runascurrentuser runhidden
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: postinstall runascurrentuser runhidden; WorkingDir: "{app}"
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/c {app}\uninstall.bat"; WorkingDir: "{app}"; Flags: runhidden
